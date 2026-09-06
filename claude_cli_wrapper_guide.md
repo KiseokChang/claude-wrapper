@@ -864,6 +864,15 @@ UI(워크벤치 index.html)는 `tool_result.is_error=true`면 붉은 카드로 �
 
 **readline() 실시간 파싱 자체는 여전히 유효하다.** `communicate()`는 프로세스 종료까지 블로킹되지만, `async for raw_line in proc.stdout`은 이벤트가 도착하는 즉시 풀린다. 다만 그 용도는 "승인 개입"이 아니라 **실시간 토큰 스트리밍(text_delta/thinking_delta), 도구 진행 상황 표시, 비용 집계**다. workbench(`server.py`의 `TurnRunner.run_turn`)가 바로 이 구조다.
 
+> **📌 2.1.263 업그레이드 후 추가 실측 (2026-09-06, dump_v263.jsonl)**
+>
+> - **신규 이벤트 `system/permission_denied`**: 자동 거부가 구조화 이벤트로 온다.
+>   `{"subtype": "permission_denied", "tool_name": "Write", "tool_use_id": "call_…", "message": "you haven't granted it yet."}`
+>   — workbench parser가 정규화 이벤트 `permission_denied`로 통과하며, UI는 붉은 거부 카드에 "권한 스킵 후 재시도" 버튼을 붙인다. (§8.1의 `tool_result.is_error` + `result.permission_denials` 기록은 여전히 병행됨)
+> - **신규 플래그 `--permission-prompts <host|none>`**: `--print` 기본값 `host`. `none`을 주면 권한 요청을 자동 거부한다. 승인 hold로 쓸 수 있는 건 여전히 없다 — 승인 개입 불가 결론은 변하지 않았다.
+> - **`--output-format json`이 list 형태로 변함**: 2.1.109는 단일 객체였으나 2.1.263은 배열로 반환 — 마지막 요소가 result. 파싱 시 `d[-1]` 취득 필요.
+> - 전체 stream-json 스키마는 `workbench/STREAM_SCHEMA.md`(실측 기준) 참고.
+
 ### 8.2 방법 2: OS 레벨 가짜 래퍼(Shim)를 통한 하이재킹 (환경 무관 방식)
 
 §8.1에서 확인했듯 헤드리스 CLI에는 승인 개입 지점이 없다. 따라서 **무인 모드(`--dangerously-skip-permissions`)에서도 100% 차단이 필요하면 OS 레벨이 유일한 개입 지점**이 된다. Claude가 실행하는 터미널 명령어는 결국 시스템의 `bash`나 개별 바이너리(`rm`, `git`)를 호출한다는 점을 이용한다.
