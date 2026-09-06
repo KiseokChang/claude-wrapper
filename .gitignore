@@ -1,0 +1,18 @@
+# 로컬 설정 — 엔진 선택 등 사용자 환경별 값
+workbench/config.json
+
+# 실행 산출물
+workbench/uvicorn.log
+workbench/sessions/
+workbench/workspace/
+__pycache__/
+*.pyc
+
+# 덤프 에러 로그 (본문 jsonl은 테스트 fixture라 포함)
+workbench/dump_text.err
+workbench/dump_tool.err
+workbench/dump_ctrl.err
+workbench/bash.exe.stackdump
+
+# 텔레그램 봇 토큰 (브릿지에서 로컬 파일로 읽음)
+workbench/.telegram_token
