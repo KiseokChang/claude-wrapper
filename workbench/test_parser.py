@@ -57,14 +57,13 @@ def test_message_delta_and_stop_are_ignored():
     assert parse_line(ms) is None
 
 
-def test_tool_use_from_content_block_start():
+def test_tool_use_stream_start_is_ignored():
+    # content_block_start 시점의 tool_use는 input이 비어있는 선행 신호 —
+    # 완성된 것은 assistant 이벤트로 온다. 중복 카드 방지를 위해 무시.
     line = ('{"type": "stream_event", "event": {"type": "content_block_start", "index": 0, '
-            '"content_block": {"type": "tool_use", "id": "call_x", "name": "Write", "input": {}}}, '
+            '"content_block": {"type": "tool_use", "id": "functions.Bash:0", "name": "Bash", "input": {}}}, '
             '"session_id": "%s"}' % SID_B)
-    ev = parse_line(line)
-    assert ev["event"] == "tool_use"
-    assert ev["data"]["id"] == "call_x"
-    assert ev["data"]["name"] == "Write"
+    assert parse_line(line) is None
 
 
 # ---------- assistant 최종 메시지 ----------

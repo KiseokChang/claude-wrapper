@@ -44,6 +44,7 @@
   <label class="chk"><input type="checkbox" id="skipPerm"> 권한 스킵 (무인)</label>
   <button id="resetBtn">세션 리셋</button>
   <span id="status">연결 중…</span>
+  <span id="costBadge" style="font-size:12px; color:#a5b4fc;"></span>
 </header>
 <main>
   <div id="chatPane">
@@ -64,6 +65,19 @@
 <script>
 const $ = id => document.getElementById(id);
 let ws, currentAssistant = null, currentThinking = null;
+let totalCost = 0, lastUsage = null;
+
+function renderCost() {
+  let t = `누적 $${totalCost.toFixed(2)}`;
+  if (lastUsage) {
+    const inK = (lastUsage.input_tokens / 1000).toFixed(1);
+    const outK = (lastUsage.output_tokens / 1000).toFixed(1);
+    const cache = lastUsage.input_tokens
+      ? Math.round(lastUsage.cache_read_input_tokens / lastUsage.input_tokens * 100) : 0;
+    t += ` · in ${inK}k/out ${outK}k · 캐시 ${cache}%`;
+  }
+  $('costBadge').textContent = t;
+}
 
 function setStatus(t, busy) { $('status').textContent = t; $('status').className = busy ? 'busy' : ''; $('sendBtn').disabled = busy; }
 
@@ -128,7 +142,11 @@ function handle(ev) {
       addTool('결과', d, d.is_error, d.content);
       currentAssistant = currentThinking = null;
       break;
-    case 'result': currentAssistant = currentThinking = null; break;
+    case 'result':
+      currentAssistant = currentThinking = null;
+      if (d.total_cost_usd) { totalCost += d.total_cost_usd; renderCost(); }
+      if (d.usage) { lastUsage = d.usage; renderCost(); }
+      break;
     case 'turn_done':
       currentAssistant = currentThinking = null;
       $('turnSummary').textContent =
@@ -141,6 +159,7 @@ function handle(ev) {
       break;
     case 'reset':
       $('chat').innerHTML = ''; $('raw').textContent = ''; $('turnSummary').textContent = '';
+      totalCost = 0; lastUsage = null; renderCost();
       addMsg('assistant', '(세션 리셋됨 — 새 세션 시작)');
       break;
   }

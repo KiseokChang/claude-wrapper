@@ -52,12 +52,7 @@ def parse_line(line: str) -> dict | None:
                         "data": {"thinking": delta.get("thinking", "")}}
             return None
         if et == "content_block_start":
-            block = ev.get("content_block") or {}
-            if block.get("type") == "tool_use":
-                return {"event": "tool_use", "session_id": sid,
-                        "data": {"id": block.get("id", ""),
-                                 "name": block.get("name", ""),
-                                 "input": block.get("input", {})}}
+            # tool_use의 선행 신호(input 비어있음)는 무시 — 완성본은 assistant 이벤트로 옴
             return None
         if et in _IGNORED_STREAM_EVENTS:
             return None
