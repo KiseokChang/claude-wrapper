@@ -7,12 +7,14 @@
 import asyncio
 import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
 import parser as ps
+import session_store as ss
 from config_store import DEFAULTS, load_config, save_config
 
 BASE = Path(__file__).parent
@@ -71,6 +73,7 @@ class TurnRunner:
                 return
             assert proc.stdout is not None
             final_result = None
+            kept = []  # 재생용 기록 — 델타 제외 (재생은 확정본만 렌더)
             async for raw_line in proc.stdout:
                 line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
                 log.write(line + "\n")
@@ -80,6 +83,8 @@ class TurnRunner:
                     continue
                 if ev["event"] == "result":
                     final_result = ev
+                else:
+                    kept.append(ev)
                 await ws.send_json(ev)
             await proc.wait()
             if proc.returncode != 0:
@@ -88,6 +93,13 @@ class TurnRunner:
                                     "data": err.decode("utf-8", errors="replace")[-2000:]})
             if final_result:
                 self.session_id = final_result["session_id"]
+                ss.append_turn(SESSIONS_DIR, self.session_id, {
+                    "turn_no": self.turn_no,
+                    "prompt": text,
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "cost_usd": final_result["data"].get("total_cost_usd"),
+                    "events": kept,
+                })
                 summary = {"subtype": final_result["data"].get("subtype"),
                            "is_error": final_result["data"].get("is_error"),
                            "cost_usd": final_result["data"].get("total_cost_usd"),
@@ -110,6 +122,16 @@ async def index():
 @app.get("/api/config")
 async def get_config():
     return JSONResponse(load_config(CONFIG_PATH))
+
+
+@app.get("/api/sessions")
+async def get_sessions():
+    return JSONResponse(ss.list_sessions(SESSIONS_DIR))
+
+
+@app.get("/api/sessions/{sid}")
+async def get_session_turns(sid: str):
+    return JSONResponse(ss.read_turns(SESSIONS_DIR, sid))
 
 
 @app.post("/api/config")
@@ -147,6 +169,17 @@ async def ws_endpoint(ws: WebSocket):
                 runner.session_id = None
                 runner.turn_no = 0
                 await ws.send_json({"event": "reset"})
+
+            elif action == "load_session":
+                # 이력 선택 — 같은 세션으로 이어가기(resume) 위해 runner에 sid 세팅
+                if runner.busy:
+                    await ws.send_json({"event": "busy"})
+                    continue
+                sid = msg.get("sid")
+                turns = ss.read_turns(SESSIONS_DIR, sid)
+                runner.session_id = sid if turns else None
+                await ws.send_json({"event": "session_loaded",
+                                    "data": {"sid": sid, "turns": turns}})
 
             elif action == "send":
                 if runner.busy:

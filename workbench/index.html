@@ -33,6 +33,12 @@
   #inputBar { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #ccc; }
   #input { flex: 1; resize: none; height: 60px; }
   #turnSummary { font-size: 11px; color: #64748b; padding: 2px 14px 6px; }
+  #history { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #history .panel { background: #fff; width: min(560px, 90vw); max-height: 80vh; overflow-y: auto; border-radius: 10px; padding: 14px; }
+  #history .row { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; cursor: pointer; }
+  #history .row:hover { background: #f1f5f9; }
+  #history .meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .turnDiv { font-size: 11px; color: #2563eb; margin: 10px 0 2px; border-bottom: 1px dashed #bfdbfe; padding-bottom: 2px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -45,9 +51,18 @@
   <input id="ollamaModel" size="14" placeholder="kimi-k-code" style="display:none">
   <label class="chk"><input type="checkbox" id="skipPerm"> 권한 스킵 (무인)</label>
   <button id="resetBtn">세션 리셋</button>
+  <button id="histBtn">📜 이력</button>
   <span id="status">연결 중…</span>
   <span id="costBadge" style="font-size:12px; color:#a5b4fc;"></span>
 </header>
+<div id="history">
+  <div class="panel">
+    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+      <b>세션 이력</b><button id="histClose">닫기</button>
+    </div>
+    <div id="histList"></div>
+  </div>
+</div>
 <main>
   <div id="chatPane">
     <div class="paneTitle">대화</div>
@@ -195,6 +210,32 @@ function handle(ev) {
       if (d.total_cost_usd) { totalCost += d.total_cost_usd; renderCost(); }
       if (d.usage) { lastUsage = d.usage; renderCost(); }
       break;
+    case 'session_loaded': {
+      currentAssistant = currentThinking = null;
+      $('chat').innerHTML = ''; $('raw').textContent = ''; $('turnSummary').textContent = '';
+      const head = document.createElement('div');
+      head.className = 'turnDiv';
+      head.textContent = '📜 이력 불러옴 — sid=' + (d.sid || '').slice(0, 8) + ' · 이어서 입력하면 이 세션을 이어갑니다';
+      $('chat').appendChild(head);
+      totalCost = 0;
+      (d.turns || []).forEach(rec => {
+        totalCost += rec.cost_usd || 0;
+        const div = document.createElement('div');
+        div.className = 'turnDiv';
+        div.textContent = '▶ ' + (rec.prompt || '') + '  · $' + (rec.cost_usd || 0).toFixed(3) + ' · ' + (rec.ts || '');
+        $('chat').appendChild(div);
+        (rec.events || []).forEach(ev => {
+          const e = ev.data || {};
+          if (ev.event === 'assistant_text') addMsg('assistant', e.text);
+          else if (ev.event === 'tool_use') addTool(e.name, e.input, false);
+          else if (ev.event === 'tool_result') addTool('결과', e, e.is_error, e.content);
+          else if (ev.event === 'permission_denied') addTool('🚫 ' + e.tool_name + ' 권한 거부', e, true, e.message);
+        });
+      });
+      renderCost();
+      setStatus('연결됨', false);
+      break;
+    }
     case 'turn_done':
       collapseThinking();
       currentAssistant = null;
@@ -235,6 +276,30 @@ $('input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 $('resetBtn').onclick = () => ws.send(JSON.stringify({action: 'reset'}));
+$('histBtn').onclick = async () => {
+  const p = $('history');
+  if (p.style.display === 'flex') { p.style.display = 'none'; return; }
+  const list = await (await fetch('/api/sessions')).json();
+  const box = $('histList'); box.innerHTML = '';
+  if (!list.length) {
+    const e = document.createElement('div');
+    e.style.cssText = 'padding:8px; color:#94a3b8; font-size:12px;';
+    e.textContent = '저장된 세션이 없습니다 — 대화를 시작하면 턴 단위로 자동 기록됩니다';
+    box.appendChild(e);
+  }
+  list.forEach(s => {
+    const r = document.createElement('div'); r.className = 'row';
+    const t = document.createElement('div'); t.textContent = s.first_prompt || '(제목 없음)';
+    const m = document.createElement('div'); m.className = 'meta';
+    m.textContent = (s.sid || '').slice(0, 8) + ' · ' + s.turns + '턴 · $' + (s.total_cost || 0).toFixed(3) +
+                    ' · ' + (s.last_ts || '').replace('T', ' ');
+    r.appendChild(t); r.appendChild(m);
+    r.onclick = () => { p.style.display = 'none'; ws.send(JSON.stringify({action: 'load_session', sid: s.sid})); };
+    box.appendChild(r);
+  });
+  p.style.display = 'flex';
+};
+$('histClose').onclick = () => { $('history').style.display = 'none'; };
 $('skipPerm').onchange = () => ws.send(JSON.stringify({action: 'set_mode', skip_permissions: $('skipPerm').checked}));
 $('engineSel').onchange = () => {
   const eng = $('engineSel').value;
