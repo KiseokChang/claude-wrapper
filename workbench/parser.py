@@ -36,6 +36,11 @@ def parse_line(line: str) -> dict | None:
     if t == "system":
         if d.get("subtype") == "init":
             return {"event": "init", "session_id": sid, "data": d}
+        if d.get("subtype") == "permission_denied":  # 2.1.263 신규 — 구조화 거부 이벤트
+            return {"event": "permission_denied", "session_id": sid,
+                    "data": {"tool_name": d.get("tool_name", ""),
+                             "tool_use_id": d.get("tool_use_id", ""),
+                             "message": d.get("message", "")}}
         return None
 
     if t == "stream_event":

@@ -138,6 +138,10 @@ function handle(ev) {
       currentAssistant = currentThinking = null;
       addTool(d.name, d.input, false);
       break;
+    case 'permission_denied':
+      currentAssistant = currentThinking = null;
+      addTool('🚫 ' + d.tool_name + ' 권한 거부', d, true, d.message);
+      break;
     case 'tool_result':
       addTool('결과', d, d.is_error, d.content);
       currentAssistant = currentThinking = null;

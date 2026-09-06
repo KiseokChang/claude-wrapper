@@ -118,6 +118,24 @@ def test_result_event():
 
 # ---------- 무시/기타 ----------
 
+def test_permission_denied_event():
+    # 2.1.263 신규: 자동 거부가 구조화 이벤트로 옴
+    line = ('{"type": "system", "subtype": "permission_denied", "tool_name": "Write", '
+            '"tool_use_id": "call_e7t7zr8m", "message": "you haven\'t granted it yet.", '
+            '"session_id": "%s"}' % SID_B)
+    ev = parse_line(line)
+    assert ev["event"] == "permission_denied"
+    assert ev["session_id"] == SID_B
+    assert ev["data"]["tool_name"] == "Write"
+    assert ev["data"]["tool_use_id"] == "call_e7t7zr8m"
+
+
+def test_thinking_tokens_event_is_ignored():
+    line = ('{"type": "system", "subtype": "thinking_tokens", "estimated_tokens": 1, '
+            '"estimated_tokens_delta": 1, "session_id": "%s"}' % SID_A)
+    assert parse_line(line) is None
+
+
 def test_hooks_and_status_are_ignored():
     dump = load_dump("dump_text.jsonl")
     assert parse_line(dump[0]) is None  # hook_started
