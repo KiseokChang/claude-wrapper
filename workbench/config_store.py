@@ -1,7 +1,8 @@
 """워크벤치 설정 영속화 — config.json (엔진 선택 유지)."""
 import json
 
-DEFAULTS = {"engine": "DIRECT", "ollama_model": "kimi-k2.7-code:cloud", "workspace": "workspace"}
+DEFAULTS = {"engine": "DIRECT", "ollama_model": "kimi-k2.7-code:cloud", "workspace": "workspace",
+            "max_budget_usd": None}
 _VALID_ENGINES = {"DIRECT", "OLLAMA"}
 
 
@@ -17,6 +18,9 @@ def load_config(path) -> dict:
     merged.update({k: v for k, v in cfg.items() if k in DEFAULTS})
     if merged["engine"] not in _VALID_ENGINES:
         merged["engine"] = DEFAULTS["engine"]
+    if not isinstance(merged.get("max_budget_usd"), (int, float)) or isinstance(
+            merged.get("max_budget_usd"), bool):
+        merged["max_budget_usd"] = None
     return merged
 
 

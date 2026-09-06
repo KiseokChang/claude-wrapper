@@ -10,6 +10,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+import psutil
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -45,6 +46,8 @@ def build_cmd(text: str, cfg: dict, resume_sid: str | None, skip_permissions: bo
         tail.append("--dangerously-skip-permissions")
     else:
         tail += ["--permission-mode", "default"]
+    if cfg.get("max_budget_usd"):  # 0/None = 미설정
+        tail += ["--max-budget-usd", str(cfg["max_budget_usd"])]
     if resume_sid:
         tail += ["--resume", resume_sid]
     if cfg["engine"] == "OLLAMA":
@@ -80,7 +83,7 @@ class TurnRunner:
                 return
             assert proc.stdout is not None
             final_result = None
-            kept = []  # 재생용 기록 — 델타 제외 (재생은 확정본만 렌더)
+            all_events = []  # 재생용 기록 — 델타 포함 수집 후 compact_events로 압축
             async for raw_line in proc.stdout:
                 line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
                 log.write(line + "\n")
@@ -90,8 +93,7 @@ class TurnRunner:
                     continue
                 if ev["event"] == "result":
                     final_result = ev
-                else:
-                    kept.append(ev)
+                all_events.append(ev)
                 await ws.send_json(ev)
             await proc.wait()
             if proc.returncode != 0:
@@ -105,7 +107,7 @@ class TurnRunner:
                     "prompt": text,
                     "ts": datetime.now().isoformat(timespec="seconds"),
                     "cost_usd": final_result["data"].get("total_cost_usd"),
-                    "events": kept,
+                    "events": ss.compact_events(all_events),
                 })
                 summary = {"subtype": final_result["data"].get("subtype"),
                            "is_error": final_result["data"].get("is_error"),
@@ -157,6 +159,25 @@ async def get_file(path: str = ""):
     return JSONResponse(data)
 
 
+@app.get("/api/stats")
+async def get_stats():
+    """경량 리소스 모니터 — 가이드 §9.3 Governor의 workbench 시작점."""
+    sessions = ss.list_sessions(SESSIONS_DIR)
+    return JSONResponse({
+        "cpu_percent": psutil.cpu_percent(interval=0.1),
+        "ram_percent": psutil.virtual_memory().percent,
+        "ram_used_gb": round(psutil.virtual_memory().used / 2**30, 1),
+        "sessions": len(sessions),
+        "turns": runner.turn_no,
+        "busy": runner.busy,
+        "engine": cfg_engine(),
+    })
+
+
+def cfg_engine() -> str:
+    return load_config(CONFIG_PATH)["engine"]
+
+
 @app.post("/api/config")
 async def set_config(cfg: dict):
     merged = dict(DEFAULTS)
@@ -187,6 +208,13 @@ async def ws_endpoint(ws: WebSocket):
                 skip_permissions = bool(msg.get("skip_permissions", False))
                 await ws.send_json({"event": "mode",
                                     "data": {"skip_permissions": skip_permissions}})
+
+            elif action == "set_budget":
+                # 턴 비용 한도 — config.json에 영속화, 다음 턴부터 적용
+                raw = msg.get("max_budget_usd")
+                cfg["max_budget_usd"] = float(raw) if raw not in (None, "", 0) else None
+                save_config(CONFIG_PATH, cfg)
+                await ws.send_json({"event": "config", "data": cfg})
 
             elif action == "reset":
                 runner.session_id = None

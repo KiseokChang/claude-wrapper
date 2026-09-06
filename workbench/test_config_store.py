@@ -3,7 +3,8 @@ import json
 import pytest
 from config_store import load_config, save_config
 
-DEFAULTS = {"engine": "DIRECT", "ollama_model": "kimi-k2.7-code:cloud", "workspace": "workspace"}
+DEFAULTS = {"engine": "DIRECT", "ollama_model": "kimi-k2.7-code:cloud", "workspace": "workspace",
+            "max_budget_usd": None}
 
 
 def test_missing_file_returns_defaults(tmp_path):
@@ -34,3 +35,30 @@ def test_save_then_load_roundtrip(tmp_path):
 def test_save_rejects_invalid_engine(tmp_path):
     with pytest.raises(ValueError):
         save_config(tmp_path / "config.json", {"engine": "BOGUS", "ollama_model": "m", "workspace": "w"})
+
+
+# ---------- max_budget_usd (#17 budget 옵션) ----------
+
+def test_budget_missing_key_defaults_to_none(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"engine": "DIRECT"}), encoding="utf-8")
+    assert load_config(p)["max_budget_usd"] is None
+
+
+def test_budget_roundtrip(tmp_path):
+    p = tmp_path / "config.json"
+    save_config(p, {"engine": "DIRECT", "ollama_model": "m", "workspace": "w",
+                    "max_budget_usd": 0.5})
+    assert load_config(p)["max_budget_usd"] == 0.5
+
+
+def test_budget_invalid_type_normalized_to_none(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"engine": "DIRECT", "max_budget_usd": "many"}), encoding="utf-8")
+    assert load_config(p)["max_budget_usd"] is None
+
+
+def test_budget_zero_means_off(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"engine": "DIRECT", "max_budget_usd": 0}), encoding="utf-8")
+    assert load_config(p)["max_budget_usd"] == 0

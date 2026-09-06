@@ -1,12 +1,51 @@
 """session_store.py 규격 테스트 — 세션별 턴 기록 저장/조회."""
 import json
 
-from session_store import append_turn, list_sessions, read_turns
+from session_store import append_turn, compact_events, list_sessions, read_turns
 
 
 def make_record(turn_no=1, prompt="안녕", cost=0.1, ts="2026-09-06T10:00:00"):
     return {"turn_no": turn_no, "prompt": prompt, "cost_usd": cost, "ts": ts,
             "events": [{"event": "assistant_text", "data": {"text": "응답"}}]}
+
+
+def ev(name, data=None, sid="s1"):
+    return {"event": name, "session_id": sid, "data": data or {}}
+
+
+# ---------- compact_events (이력 압축 — thinking 내용 보존) ----------
+
+def test_compact_merges_consecutive_thinking():
+    events = [ev("thinking_delta", {"thinking": "a"}),
+              ev("thinking_delta", {"thinking": "b"}),
+              ev("assistant_text", {"text": "답"})]
+    out = compact_events(events)
+    assert out == [ev("thinking", {"text": "ab"}), ev("assistant_text", {"text": "답"})]
+
+
+def test_compact_splits_thinking_by_tool():
+    events = [ev("thinking_delta", {"thinking": "a"}),
+              ev("tool_use", {"name": "Bash"}),
+              ev("tool_result", {"content": "x"}),
+              ev("thinking_delta", {"thinking": "b"})]
+    out = compact_events(events)
+    assert [e["event"] for e in out] == ["thinking", "tool_use", "tool_result", "thinking"]
+
+
+def test_compact_drops_deltas_and_meta():
+    events = [ev("init", {"model": "m"}),
+              ev("text_delta", {"text": "x"}),
+              ev("assistant_text", {"text": "y"}),
+              ev("result", {"total_cost_usd": 1})]
+    out = compact_events(events)
+    assert [e["event"] for e in out] == ["assistant_text"]
+
+
+def test_compact_flushes_trailing_thinking():
+    events = [ev("assistant_text", {"text": "y"}),
+              ev("thinking_delta", {"thinking": "끝"})]
+    out = compact_events(events)
+    assert out == [ev("assistant_text", {"text": "y"}), ev("thinking", {"text": "끝"})]
 
 
 # ---------- append_turn / read_turns ----------

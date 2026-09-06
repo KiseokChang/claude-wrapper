@@ -128,3 +128,35 @@ def test_skip_bare_command_is_not_skip():
 def test_normal_message_is_not_skip():
     from telegram_bridge import parse_skip_command
     assert parse_skip_command("파일 분석해줘") is None
+
+
+# ---------- parse_budget_command (#17 budget 옵션) ----------
+
+def test_budget_value():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget 0.5") == (True, 0.5)
+
+
+def test_budget_integer_value():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget 2") == (True, 2.0)
+
+
+def test_budget_off():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget off") == (True, None)
+
+
+def test_budget_bare_is_not_command():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget") == (False, None)
+
+
+def test_budget_bad_value_is_not_command():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget 많이") == (False, None)
+
+
+def test_budget_negative_rejected():
+    from telegram_bridge import parse_budget_command
+    assert parse_budget_command("/budget -1") == (False, None)

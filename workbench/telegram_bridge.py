@@ -12,7 +12,7 @@ from pathlib import Path
 import aiohttp
 
 import parser as ps
-from config_store import load_config
+from config_store import load_config, save_config
 from server import BASE, build_cmd
 
 CONFIG_PATH = BASE / "config.json"
@@ -61,6 +61,23 @@ def parse_skip_command(text: str) -> bool | None:
     if parts[1] == "off":
         return False
     return None
+
+
+def parse_budget_command(text: str) -> tuple[bool, float | None]:
+    """/budget 커맨드 파싱 — ('/budget 0.5')→(True,0.5), ('/budget off')→(True,None),
+    커맨드가 아니면 (False,None). 음수/비숫자는 커맨드 아님."""
+    parts = (text or "").strip().lower().split()
+    if len(parts) != 2 or parts[0] != "/budget":
+        return False, None
+    if parts[1] == "off":
+        return True, None
+    try:
+        value = float(parts[1])
+    except ValueError:
+        return False, None
+    if value < 0:
+        return False, None
+    return True, value
 
 
 def build_reply(events: list[dict]) -> tuple[str, list[str]]:
@@ -174,6 +191,15 @@ class TelegramBridge:
             self.skip_perms[chat_id] = skip
             state = "이후 턴부터 권한 확인 없이 실행됩니다" if skip else "권한 확인 모드로 복귀합니다"
             await self.send_text(http, chat_id, "🔓 권한 스킵 " + ("ON" if skip else "OFF") + " — " + state)
+            return
+        is_budget, budget_val = parse_budget_command(text)  # 턴 비용 한도 — 전역 설정
+        if is_budget:
+            cfg = load_config(CONFIG_PATH)
+            cfg["max_budget_usd"] = budget_val
+            save_config(CONFIG_PATH, cfg)
+            shown = f"${budget_val:g}" if budget_val else "해제"
+            await self.send_text(http, chat_id, "💰 턴 비용 한도: " + shown +
+                                 ("\n(초과 시 CLI가 턴을 중단합니다)" if budget_val else ""))
             return
         self.busy_chats.add(chat_id)
         try:

@@ -104,7 +104,7 @@ tool_result 블록: `tool_use_id`, `content`, `is_error`.
 | `num_turns` | 2 | |
 | `stop_reason` | `"end_turn"` | |
 | `session_id` | UUID | 다음 턴 `--resume`에 사용 |
-| `total_cost_usd` | 0.25381 | |
+| `total_cost_usd` | 0.25381 | **턴별 비용** (실측: resume 턴2 $0.094 ≈ 턴1 $0.095 — 세션 누적 아님. UI 누적은 턴별 합산이 정답) |
 | `usage` | 토큰 상세 | 하단 표 |
 | `modelUsage` | 모델별 집계 | `{inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUSD, contextWindow, maxOutputTokens}` |
 | `permission_denials` | 배열 | `{tool_name, tool_use_id, tool_input}` — 거부 상세가 result에도 요약됨 |

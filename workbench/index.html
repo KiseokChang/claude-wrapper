@@ -62,6 +62,8 @@
   <button id="histBtn">📜 이력</button>
   <span id="status">연결 중…</span>
   <span id="costBadge" style="font-size:12px; color:#a5b4fc;"></span>
+  <input id="budgetIn" size="5" placeholder="한도$" title="턴 비용 한도(USD) — 비우면 무제한 (--max-budget-usd)">
+  <span id="sysBadge" style="font-size:12px; color:#94a3b8;"></span>
 </header>
 <div id="history">
   <div class="panel">
@@ -159,6 +161,7 @@ function handle(ev) {
       $('engineSel').value = d.engine;
       $('ollamaModel').style.display = d.engine === 'OLLAMA' ? '' : 'none';
       $('ollamaModel').value = d.ollama_model;
+      $('budgetIn').value = d.max_budget_usd || '';
       setStatus('연결됨 — 엔진: ' + d.engine);
       break;
     case 'text_delta':
@@ -242,7 +245,18 @@ function handle(ev) {
         $('chat').appendChild(div);
         (rec.events || []).forEach(ev => {
           const e = ev.data || {};
-          if (ev.event === 'assistant_text') addMsg('assistant', e.text);
+          if (ev.event === 'thinking') {
+            const dt = document.createElement('details');
+            dt.className = 'thinking';
+            const sum = document.createElement('summary');
+            sum.textContent = '💭 생각';
+            const body = document.createElement('div');
+            body.className = 'thinkingBody';
+            body.textContent = e.text || '';
+            dt.appendChild(sum); dt.appendChild(body);
+            $('chat').appendChild(dt);
+          }
+          else if (ev.event === 'assistant_text') addMsg('assistant', e.text);
           else if (ev.event === 'tool_use') addTool(e.name, e.input, false);
           else if (ev.event === 'tool_result') addTool('결과', e, e.is_error, e.content);
           else if (ev.event === 'permission_denied') addTool('🚫 ' + e.tool_name + ' 권한 거부', e, true, e.message);
@@ -386,6 +400,20 @@ async function openFile(path) {
 }
 $('tabRaw').onclick = () => showTab('raw');
 $('tabFiles').onclick = () => showTab('files');
+
+// ---------- budget + 리소스 배지 ----------
+$('budgetIn').onchange = () => {
+  const v = parseFloat($('budgetIn').value);
+  ws.send(JSON.stringify({action: 'set_budget', max_budget_usd: (isNaN(v) || v <= 0) ? null : v}));
+};
+async function pollStats() {
+  try {
+    const s = await (await fetch('/api/stats')).json();
+    $('sysBadge').textContent = `CPU ${Math.round(s.cpu_percent)}% · RAM ${Math.round(s.ram_percent)}% · 세션 ${s.sessions}`;
+  } catch (e) { /* 서버 재시작 등 — 다음 폴링에서 재시도 */ }
+}
+setInterval(pollStats, 10000);
+pollStats();
 $('skipPerm').onchange = () => ws.send(JSON.stringify({action: 'set_mode', skip_permissions: $('skipPerm').checked}));
 $('engineSel').onchange = () => {
   const eng = $('engineSel').value;
