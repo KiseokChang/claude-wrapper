@@ -16,11 +16,18 @@ from fastapi.responses import FileResponse, JSONResponse
 import parser as ps
 import session_store as ss
 from config_store import DEFAULTS, load_config, save_config
+from file_browser import list_dir, read_file
 
 BASE = Path(__file__).parent
 CONFIG_PATH = BASE / "config.json"
 SESSIONS_DIR = BASE / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
+
+
+def workspace_dir() -> Path:
+    ws = BASE / load_config(CONFIG_PATH).get("workspace", DEFAULTS["workspace"])
+    ws.mkdir(exist_ok=True)
+    return ws
 
 app = FastAPI()
 
@@ -132,6 +139,22 @@ async def get_sessions():
 @app.get("/api/sessions/{sid}")
 async def get_session_turns(sid: str):
     return JSONResponse(ss.read_turns(SESSIONS_DIR, sid))
+
+
+@app.get("/api/files")
+async def get_files(dir: str = ""):
+    entries = list_dir(workspace_dir(), dir)
+    if entries is None:
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    return JSONResponse(entries)
+
+
+@app.get("/api/file")
+async def get_file(path: str = ""):
+    data = read_file(workspace_dir(), path)
+    if data is None:
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    return JSONResponse(data)
 
 
 @app.post("/api/config")

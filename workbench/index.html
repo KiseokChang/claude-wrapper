@@ -33,6 +33,14 @@
   #inputBar { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #ccc; }
   #input { flex: 1; resize: none; height: 60px; }
   #turnSummary { font-size: 11px; color: #64748b; padding: 2px 14px 6px; }
+  .tab { border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; border-radius: 4px; font-size: 11px; padding: 2px 8px; }
+  .tab.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+  #fileView { flex: 1; overflow-y: auto; padding: 8px 10px; font-size: 12px; display: none; }
+  .frow { padding: 3px 4px; cursor: pointer; border-radius: 4px; }
+  .frow:hover { background: #f1f5f9; }
+  #fcrumb { margin-bottom: 6px; color: #475569; }
+  #fcrumb .frow { display: inline; }
+  #fileContent { font-family: Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin: 0; }
   #history { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none; align-items: center; justify-content: center; z-index: 10; }
   #history .panel { background: #fff; width: min(560px, 90vw); max-height: 80vh; overflow-y: auto; border-radius: 10px; padding: 14px; }
   #history .row { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; cursor: pointer; }
@@ -75,8 +83,16 @@
     </div>
   </div>
   <div id="rawPane">
-    <div class="paneTitle">raw stream-json (NDJSON)</div>
+    <div class="paneTitle" style="display:flex; gap:6px; align-items:center;">
+      <button class="tab on" id="tabRaw">raw stream-json</button>
+      <button class="tab" id="tabFiles">📁 파일</button>
+    </div>
     <div id="raw"></div>
+    <div id="fileView">
+      <div id="fcrumb"></div>
+      <div id="flist"></div>
+      <pre id="fileContent" style="display:none;"></pre>
+    </div>
   </div>
 </main>
 <script>
@@ -300,6 +316,76 @@ $('histBtn').onclick = async () => {
   p.style.display = 'flex';
 };
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
+
+// ---------- 파일 브라우저 ----------
+let fileDir = '';
+function showTab(which) {
+  $('tabRaw').className = 'tab' + (which === 'raw' ? ' on' : '');
+  $('tabFiles').className = 'tab' + (which === 'files' ? ' on' : '');
+  $('raw').style.display = which === 'raw' ? '' : 'none';
+  $('fileView').style.display = which === 'files' ? 'block' : 'none';
+  if (which === 'files') openDir(fileDir);
+}
+async function openDir(path) {
+  fileDir = path;
+  const list = await (await fetch('/api/files?dir=' + encodeURIComponent(path))).json();
+  if (!Array.isArray(list)) { $('flist').textContent = '경로 오류'; return; }
+  $('fileContent').style.display = 'none';
+  $('flist').style.display = '';
+  const crumb = $('fcrumb');
+  crumb.textContent = '';
+  const rootLink = document.createElement('span');
+  rootLink.className = 'frow';
+  rootLink.textContent = '📁 workspace';
+  rootLink.onclick = () => openDir('');
+  crumb.appendChild(rootLink);
+  let acc = '';
+  (path ? path.split('/') : []).forEach(seg => {
+    acc += (acc ? '/' : '') + seg;
+    const s = document.createElement('span');
+    s.className = 'frow';
+    s.textContent = ' / ' + seg;
+    s.onclick = () => openDir(acc);
+    crumb.appendChild(s);
+  });
+  const box = $('flist');
+  box.innerHTML = '';
+  if (path) {
+    const up = document.createElement('div');
+    up.className = 'frow';
+    up.textContent = '↩ 상위로';
+    up.onclick = () => openDir(path.split('/').slice(0, -1).join('/'));
+    box.appendChild(up);
+  }
+  list.forEach(e => {
+    const r = document.createElement('div');
+    r.className = 'frow';
+    r.textContent = (e.type === 'dir' ? '📁 ' : '📄 ') + e.name +
+                    (e.type === 'file' ? '  (' + e.size + 'B)' : '');
+    r.onclick = () => {
+      if (e.type === 'dir') openDir((path ? path + '/' : '') + e.name);
+      else openFile((path ? path + '/' : '') + e.name);
+    };
+    box.appendChild(r);
+  });
+}
+async function openFile(path) {
+  const d = await (await fetch('/api/file?path=' + encodeURIComponent(path))).json();
+  if (d.error) return;
+  $('flist').style.display = 'none';
+  const pre = $('fileContent');
+  pre.style.display = '';
+  pre.textContent = d.content + (d.truncated ? '\n… (잘림 — 전체 ' + d.size + 'B)' : '');
+  const crumb = $('fcrumb');
+  crumb.textContent = '';
+  const back = document.createElement('span');
+  back.className = 'frow';
+  back.textContent = '↩ 목록';
+  back.onclick = () => openDir(fileDir);
+  crumb.appendChild(back);
+}
+$('tabRaw').onclick = () => showTab('raw');
+$('tabFiles').onclick = () => showTab('files');
 $('skipPerm').onchange = () => ws.send(JSON.stringify({action: 'set_mode', skip_permissions: $('skipPerm').checked}));
 $('engineSel').onchange = () => {
   const eng = $('engineSel').value;
