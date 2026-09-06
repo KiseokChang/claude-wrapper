@@ -22,7 +22,9 @@
   .msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; max-width: 90%; white-space: pre-wrap; }
   .user { background: #2563eb; color: #fff; margin-left: auto; }
   .assistant { background: #f1f5f9; }
-  .thinking { color: #6b7280; font-size: 12px; padding: 4px 12px; font-style: italic; }
+  details.thinking { color: #6b7280; font-size: 12px; padding: 4px 12px; font-style: italic; max-width: 90%; }
+  details.thinking summary { cursor: pointer; }
+  details.thinking .thinkingBody { white-space: pre-wrap; margin-top: 4px; }
   .tool { font-family: Consolas, monospace; font-size: 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
   .tool.err { background: #fee2e2; border-color: #fca5a5; }
   .tool pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; }
@@ -65,6 +67,15 @@
 <script>
 const $ = id => document.getElementById(id);
 let ws, currentAssistant = null, currentThinking = null;
+
+// thinking 블록 접기 — 텍스트/툴 이벤트가 오면 자동 접고, 클릭으로 토글
+function collapseThinking() {
+  if (currentThinking && currentThinking.isConnected) {
+    currentThinking.open = false;
+    currentThinking.querySelector('summary').textContent = '💭 생각 (클릭해서 보기)';
+  }
+  currentThinking = null;
+}
 let totalCost = 0, lastUsage = null;
 
 function renderCost() {
@@ -120,26 +131,42 @@ function handle(ev) {
       setStatus('연결됨 — 엔진: ' + d.engine);
       break;
     case 'text_delta':
+      collapseThinking();
       if (!currentAssistant) currentAssistant = addMsg('assistant', '');
       currentAssistant.textContent += d.text;
       $('chat').scrollTop = $('chat').scrollHeight;
       break;
-    case 'thinking_delta':
-      if (!currentThinking) currentThinking = document.createElement('div');
-      currentThinking.className = 'thinking';
-      if (!currentThinking.isConnected) $('chat').appendChild(currentThinking);
-      currentThinking.textContent += d.thinking;
+    case 'thinking_delta': {
+      if (!currentThinking) {
+        currentThinking = document.createElement('details');
+        currentThinking.open = true;
+        const sum = document.createElement('summary');
+        sum.textContent = '💭 생각 중…';
+        sum.onclick = () => setTimeout(() => {
+          sum.textContent = currentThinking.open ? '💭 생각' : '💭 생각 (클릭해서 보기)';
+        }, 0);
+        currentThinking.appendChild(sum);
+        const body = document.createElement('div');
+        body.className = 'thinkingBody';
+        currentThinking.appendChild(body);
+        $('chat').appendChild(currentThinking);
+      }
+      currentThinking.querySelector('.thinkingBody').textContent += d.thinking;
       $('chat').scrollTop = $('chat').scrollHeight;
       break;
+    }
     case 'assistant_text':
+      collapseThinking();
       currentAssistant = null;
       break;
     case 'tool_use':
-      currentAssistant = currentThinking = null;
+      collapseThinking();
+      currentAssistant = null;
       addTool(d.name, d.input, false);
       break;
     case 'permission_denied': {
-      currentAssistant = currentThinking = null;
+      collapseThinking();
+      currentAssistant = null;
       const card = addTool('🚫 ' + d.tool_name + ' 권한 거부', d, true, d.message);
       const retry = document.createElement('button');
       retry.textContent = '🔓 권한 스킵 후 재시도';
@@ -158,16 +185,19 @@ function handle(ev) {
       break;
     }
     case 'tool_result':
+      collapseThinking();
+      currentAssistant = null;
       addTool('결과', d, d.is_error, d.content);
-      currentAssistant = currentThinking = null;
       break;
     case 'result':
-      currentAssistant = currentThinking = null;
+      collapseThinking();
+      currentAssistant = null;
       if (d.total_cost_usd) { totalCost += d.total_cost_usd; renderCost(); }
       if (d.usage) { lastUsage = d.usage; renderCost(); }
       break;
     case 'turn_done':
-      currentAssistant = currentThinking = null;
+      collapseThinking();
+      currentAssistant = null;
       $('turnSummary').textContent =
         `턴 완료 — ${d.is_error ? '오류' : '성공'} · $${d.cost_usd} · ${(d.duration_ms/1000).toFixed(1)}s · sid=${(d.session_id||'').slice(0,8)}`;
       setStatus('연결됨', false);
