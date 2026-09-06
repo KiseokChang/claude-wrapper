@@ -82,3 +82,49 @@ def test_build_reply_error_tool_result_visible():
     reply, _ = build_reply(events)
     assert "거부" in reply
     assert "⚠️" in reply  # 거부 표식
+
+
+def test_build_reply_denial_includes_skip_hint():
+    from telegram_bridge import build_reply
+    events = [
+        {"event": "tool_result", "data": {"tool_use_id": "c1",
+                                          "content": "you haven't granted it yet.",
+                                          "is_error": True}},
+        {"event": "assistant_text", "data": {"text": "권한이 거부되었습니다."}},
+    ]
+    reply, _ = build_reply(events)
+    assert "/skip on" in reply  # 재시도 힌트 포함
+
+
+def test_build_reply_no_hint_without_denial():
+    from telegram_bridge import build_reply
+    events = [{"event": "assistant_text", "data": {"text": "정상 완료"}}]
+    reply, _ = build_reply(events)
+    assert "/skip" not in reply
+
+
+# ---------- parse_skip_command (#12 권한 재시도) ----------
+
+def test_skip_on():
+    from telegram_bridge import parse_skip_command
+    assert parse_skip_command("/skip on") is True
+
+
+def test_skip_on_case_insensitive():
+    from telegram_bridge import parse_skip_command
+    assert parse_skip_command("/skip ON") is True
+
+
+def test_skip_off():
+    from telegram_bridge import parse_skip_command
+    assert parse_skip_command("/skip off") is False
+
+
+def test_skip_bare_command_is_not_skip():
+    from telegram_bridge import parse_skip_command
+    assert parse_skip_command("/skip") is None
+
+
+def test_normal_message_is_not_skip():
+    from telegram_bridge import parse_skip_command
+    assert parse_skip_command("파일 분석해줘") is None

@@ -51,6 +51,18 @@ def split_for_telegram(text: str, limit: int = TG_LIMIT) -> list[str]:
     return [text[i:i + limit] for i in range(0, len(text), limit)]
 
 
+def parse_skip_command(text: str) -> bool | None:
+    """/skip on|off 커맨드 파싱 — on→True, off→False, 그 외→None."""
+    parts = (text or "").strip().lower().split()
+    if len(parts) != 2 or parts[0] != "/skip":
+        return None
+    if parts[1] == "on":
+        return True
+    if parts[1] == "off":
+        return False
+    return None
+
+
 def build_reply(events: list[dict]) -> tuple[str, list[str]]:
     """한 턴의 정규화 이벤트들 → (응답 텍스트, 선택지)."""
     texts = []
@@ -67,6 +79,7 @@ def build_reply(events: list[dict]) -> tuple[str, list[str]]:
     reply = ""
     if denials:
         reply += "⚠️ 권한 거부:\n" + "\n".join("· " + s for s in denials) + "\n\n"
+        reply += "(/skip on 입력 시 이후 턴은 권한 확인 없이 실행)\n\n"
     reply += "\n".join(texts) or "(응답 없음)"
     if final_result and final_result.get("total_cost_usd"):
         reply += f"\n\n— ${final_result['total_cost_usd']:.3f}"
@@ -81,6 +94,7 @@ class TelegramBridge:
         self.token = token
         self.sessions: dict[int, str | None] = {}   # chat_id -> session_id
         self.choices: dict[int, list[str]] = {}     # chat_id -> 마지막 선택지
+        self.skip_perms: dict[int, bool] = {}       # chat_id -> 권한 스킵 여부
         self.busy_chats: set[int] = set()
         self.api = TG_API.format(token=token, method="{method}")
 
@@ -102,7 +116,7 @@ class TelegramBridge:
         cfg = load_config(CONFIG_PATH)
         events = []
         sid = self.sessions.get(chat_id)
-        cmd = build_cmd(text, cfg, sid, skip_permissions=False)
+        cmd = build_cmd(text, cfg, sid, skip_permissions=self.skip_perms.get(chat_id, False))
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=BASE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -154,6 +168,12 @@ class TelegramBridge:
             self.sessions[chat_id] = None
             self.choices[chat_id] = []
             await self.send_text(http, chat_id, "🔄 세션 리셋됨 — 새 대화 시작")
+            return
+        skip = parse_skip_command(text)  # 권한 스킵 토글 — busy 가드보다 먼저 처리
+        if skip is not None:
+            self.skip_perms[chat_id] = skip
+            state = "이후 턴부터 권한 확인 없이 실행됩니다" if skip else "권한 확인 모드로 복귀합니다"
+            await self.send_text(http, chat_id, "🔓 권한 스킵 " + ("ON" if skip else "OFF") + " — " + state)
             return
         self.busy_chats.add(chat_id)
         try:

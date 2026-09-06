@@ -152,7 +152,9 @@ async def ws_endpoint(ws: WebSocket):
                 if runner.busy:
                     await ws.send_json({"event": "busy"})
                     continue
-                await runner.run_turn(ws, msg["text"], cfg, skip_permissions)
+                # per-turn 스킵 우선(재시도 버튼), 없으면 연결 레벨 설정
+                use_skip = bool(msg.get("skip_permissions", skip_permissions))
+                await runner.run_turn(ws, msg["text"], cfg, use_skip)
 
     except Exception:
         return  # 연결 종료
